@@ -1,0 +1,201 @@
+{
+    "$connections": {
+        "value": {
+            "azureblob": {
+                "connectionId": "/subscriptions/#SubcriptionHere#/resourceGroups/#YourResourceGroup#/providers/Microsoft.Web/connections/azureblob",
+                "connectionName": "azureblob",
+                "id": "/subscriptions/#SubcriptionHere#/providers/Microsoft.Web/locations/#DeploymentRegion#/managedApis/azureblob"
+            },
+            "keyvault": {
+                "connectionId": "/subscriptions/#SubcriptionHere#/resourceGroups/#YourResourceGroup#/providers/Microsoft.Web/connections/keyvault",
+                "connectionName": "keyvault",
+                "id": "/subscriptions/#SubcriptionHere#/providers/Microsoft.Web/locations/#DeploymentRegion#/managedApis/keyvault"
+            }
+        }
+    },
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "Get_secret": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['keyvault']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/secrets/@{encodeURIComponent('KeyGen-API-Key')}/value"
+                },
+                "runAfter": {
+                    "Initialize_endpointkey": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "Initialize_endpointbase": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "enpointbase",
+                            "type": "String",
+                            "value": "https://prod-18.northcentralus.logic.azure.com:443/workflows/#ThisWillBeYourWorkFlow#/triggers/manual/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig="
+                        }
+                    ]
+                },
+                "runAfter": {},
+                "type": "InitializeVariable"
+            },
+            "Initialize_endpointkey": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "endpointkey",
+                            "type": "String",
+                            "value": "NotUsedNow"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Initialize_endpointbase": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "Initialize_httpStatus": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "httpStatus",
+                            "type": "String",
+                            "value": "200"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Initialize_keyVer": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "Initialize_keyVer": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "keyVer",
+                            "type": "String",
+                            "value": "D"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Get_secret": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "Until": {
+                "actions": {
+                    "Delay": {
+                        "inputs": {
+                            "interval": {
+                                "count": 10,
+                                "unit": "Second"
+                            }
+                        },
+                        "runAfter": {},
+                        "type": "Wait"
+                    },
+                    "HTTP_call_endpoint": {
+                        "inputs": {
+                            "body": {
+                                "KeyVersion": "@{variables('keyVer')}",
+                                "caller": "Client1"
+                            },
+                            "method": "POST",
+                            "uri": "@{variables('enpointbase')}@{body('Get_secret')?['value']}"
+                        },
+                        "runAfter": {
+                            "Delay": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http"
+                    },
+                    "Set_variable": {
+                        "inputs": {
+                            "name": "httpStatus",
+                            "value": "@{outputs('HTTP_call_endpoint')['statusCode']}"
+                        },
+                        "runAfter": {
+                            "Write_Status_to_blob": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "SetVariable"
+                    },
+                    "Write_Status_to_blob": {
+                        "inputs": {
+                            "body": "@body('HTTP_call_endpoint')",
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                }
+                            },
+                            "method": "post",
+                            "path": "/datasets/default/files",
+                            "queries": {
+                                "folderPath": "/keytest",
+                                "name": "/Client1_@{variables('keyVer')}_@{utcNow()}_@{outputs('HTTP_call_endpoint')['statusCode']}",
+                                "queryParametersSingleEncoded": true
+                            }
+                        },
+                        "runAfter": {
+                            "HTTP_call_endpoint": [
+                                "Succeeded",
+                                "Failed"
+                            ]
+                        },
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            }
+                        },
+                        "type": "ApiConnection"
+                    }
+                },
+                "expression": "@not(equals(variables('httpStatus'), string(200)))",
+                "limit": {
+                    "count": 100,
+                    "timeout": "PT20M"
+                },
+                "runAfter": {
+                    "Initialize_httpStatus": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Until"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            }
+        },
+        "triggers": {
+            "manual": {
+                "inputs": {
+                    "schema": {}
+                },
+                "kind": "Http",
+                "type": "Request"
+            }
+        }
+    }
+}
